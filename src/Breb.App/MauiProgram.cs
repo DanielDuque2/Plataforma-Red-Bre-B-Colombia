@@ -27,6 +27,16 @@ public static class MauiProgram
 			http.Timeout = TimeSpan.FromSeconds(10);
 		});
 
+		// La sesion del usuario: UN token para toda la app.
+		//
+		// Singleton porque es UNA sesion; dos instancias serian dos usuarios
+		// distintos dentro de la misma app. Antes cada pantalla pedia su
+		// propio token en cada operacion, y con usuarios distintos.
+		builder.Services.AddSingleton<SesionUsuario>();
+
+		builder.Services.AddTransient<LoginViewModel>();
+		builder.Services.AddTransient<LoginPage>();
+
 		builder.Services.AddTransient<SaldoViewModel>();
 		builder.Services.AddTransient<MainPage>();
 
