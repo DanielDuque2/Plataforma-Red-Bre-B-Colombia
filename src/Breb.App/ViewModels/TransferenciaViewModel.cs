@@ -32,6 +32,7 @@ public partial class TransferenciaViewModel : ObservableObject
     private readonly ClienteBrebApi _api;
     private readonly ColaOperaciones _cola;
     private string? _token;
+    private bool _reintentoPendientesEnCurso;
 
     public TransferenciaViewModel(ClienteBrebApi api, ColaOperaciones cola)
     {
@@ -95,8 +96,13 @@ public partial class TransferenciaViewModel : ObservableObject
 
         var pendientes = await _cola.PendientesAsync();
         if (pendientes.Count > 0)
+        {
             Estado = $"Quedaron {pendientes.Count} operación(es) de una sesión anterior. " +
                      "Se reenvían solas cuando haya red.";
+
+            if (Connectivity.Current.NetworkAccess == NetworkAccess.Internet)
+                await ReintentarPendientesAsync();
+        }
     }
 
     /// <summary>Al desaparecer la pantalla se suelta el suscriptor.</summary>
@@ -115,7 +121,7 @@ public partial class TransferenciaViewModel : ObservableObject
     [RelayCommand]
     private async Task TransferirAsync()
     {
-        if (Enviando) return;
+        if (Enviando || _reintentoPendientesEnCurso) return;
 
         if (!decimal.TryParse(Monto, NumberStyles.Number, Colombia, out var montoUVB) || montoUVB <= 0)
         {
@@ -153,19 +159,26 @@ public partial class TransferenciaViewModel : ObservableObject
     [RelayCommand]
     private async Task ReintentarPendientesAsync()
     {
-        if (Enviando) return;
-
-        var pendientes = await _cola.PendientesAsync();
-        if (pendientes.Count == 0)
+        if (Enviando || _reintentoPendientesEnCurso) return;
+        _reintentoPendientesEnCurso = true;
+        try
         {
-            Estado = "No hay nada pendiente.";
-            return;
+            var pendientes = await _cola.PendientesAsync();
+            if (pendientes.Count == 0)
+            {
+                Estado = "No hay nada pendiente.";
+                return;
+            }
+
+            foreach (var op in pendientes)
+            {
+                LlaveTexto = op.Llave.ToString();
+                await EnviarAsync(op, esReintento: true);
+            }
         }
-
-        foreach (var op in pendientes)
+        finally
         {
-            LlaveTexto = op.Llave.ToString();
-            await EnviarAsync(op, esReintento: true);
+            _reintentoPendientesEnCurso = false;
         }
     }
 
@@ -176,6 +189,7 @@ public partial class TransferenciaViewModel : ObservableObject
     private async Task EnviarAsync(OperacionPendiente op, bool esReintento)
     {
         Enviando = true;
+        var retencionConfirmada = false;
         try
         {
             Estado = esReintento ? "Reenviando operación pendiente…" : "Pidiendo token…";
@@ -185,11 +199,12 @@ public partial class TransferenciaViewModel : ObservableObject
 
             Estado = "Enviando transferencia…";
             var r = await _api.RetenerAsync(op.CuentaId, op.MontoUVB, op.Llave, _token);
+            retencionConfirmada = true;
 
             Resultado = r.Repetida
                 ? $"Ya estaba hecha. El servidor reconoció la llave y devolvió la retención " +
                   $"original de {r.MontoUVB.ToString("N2", Colombia)} UVB."
-                : $"Transferencia aceptada por {r.MontoUVB.ToString("N2", Colombia)} UVB.";
+                : $"Retención confirmada por {r.MontoUVB.ToString("N2", Colombia)} UVB.";
 
             // ── El servidor confirmó: recién AHORA sale de la cola ──────────
             // Da igual si respondió repetida=true o repetida=false: las dos
@@ -210,6 +225,13 @@ public partial class TransferenciaViewModel : ObservableObject
         }
         catch (HttpRequestException)
         {
+            if (retencionConfirmada)
+            {
+                Estado = "La retención fue confirmada; no se pudo actualizar el saldo. " +
+                         "Consulta el saldo de nuevo cuando haya conexión.";
+                return;
+            }
+
             // Sin red. La operación SE QUEDA en la cola, en disco.
             await _cola.RegistrarIntentoAsync(op.Llave);
             await RefrescarPendientesAsync();
@@ -218,6 +240,13 @@ public partial class TransferenciaViewModel : ObservableObject
         }
         catch (TaskCanceledException)
         {
+            if (retencionConfirmada)
+            {
+                Estado = "La retención fue confirmada; se agotó el tiempo al actualizar " +
+                         "el saldo. Consulta de nuevo más tarde.";
+                return;
+            }
+
             // Timeout: el caso MÁS peligroso. No sabemos si el servidor
             // alcanzó a procesarla. Precisamente para esto existe la llave:
             // reintentar es seguro porque el servidor reconocerá la repetida.
@@ -228,6 +257,12 @@ public partial class TransferenciaViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (retencionConfirmada)
+            {
+                Estado = $"La retención fue confirmada, pero no se pudo actualizar el saldo: {ex.Message}";
+                return;
+            }
+
             // Rechazo del servidor que NO es un problema de red: clave mala,
             // rol equivocado, monto inválido. Reintentar no lo va a arreglar,
             // así que la operación sale de la cola y se le dice al usuario.

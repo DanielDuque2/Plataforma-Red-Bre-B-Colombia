@@ -72,7 +72,7 @@ cd ../Breb.Cuentas
 dotnet run --urls http://0.0.0.0:5080
 ```
 
-Y desde la app, la dirección **no** es `localhost`:
+En el emulador, la dirección **no** es `localhost`:
 
 | Desde el emulador, hacia… | Resultado |
 |---|---|
@@ -89,13 +89,77 @@ Comprobación rápida **del camino de red** (no de la app):
 adb shell am start -a android.intent.action.VIEW -d "http://10.0.2.2:5080/swagger/index.html"
 ```
 
----
+## Conectar un teléfono Android por la misma Wi-Fi
+
+1. Conecta el PC y el teléfono a la misma red Wi-Fi. Evita la red de invitados: algunos routers aíslan sus dispositivos entre sí.
+2. En Windows, ejecuta `ipconfig` y copia la dirección **IPv4** del adaptador Wi-Fi, por ejemplo `192.168.1.25`. No uses `127.0.0.1` ni `10.0.2.2` en el teléfono.
+3. En una terminal del PC, inicia PostgreSQL y RabbitMQ:
+
+   ```powershell
+   docker start breb-postgres breb-rabbitmq
+   ```
+
+4. En otra terminal, desde la raíz del repositorio, inicia la API escuchando en la red:
+
+   ```powershell
+   dotnet run --project .\src\Breb.Cuentas\Breb.Cuentas.csproj -- --urls http://0.0.0.0:5080
+   ```
+
+5. Si Windows Defender Firewall pregunta, permite el acceso **solo en redes privadas**. Si no aparece el aviso y el teléfono no conecta, abre PowerShell como administrador y crea una regla limitada a la red local confiable:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Breb API 5080 (LAN)" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5080 -Profile Private -RemoteAddress LocalSubnet
+   ```
+
+   Para quitarla después de la demo:
+
+   ```powershell
+   Remove-NetFirewallRule -DisplayName "Breb API 5080 (LAN)"
+   ```
+
+6. Desde el navegador del teléfono abre `http://<IPv4-del-PC>:5080/swagger/index.html`, por ejemplo `http://192.168.1.25:5080/swagger/index.html`. Si no carga, revisa la IP, la regla de firewall y que ambos estén en la misma red.
+7. Abre Breb.App y ve a **Saldo**. En **URL de la API** escribe `http://<IPv4-del-PC>:5080`, pulsa **Guardar dirección de API** y luego **Consultar saldo**. La dirección se guarda en el teléfono; no hay que recompilar la app cuando cambia la IP.
+8. En **Transferir**, prueba el envío. Para comprobar el modo offline, toca **Transferir** y activa modo avión mientras la app está pidiendo el token o enviando la retención. Verifica el aviso de operación guardada y la llave en pantalla; luego desactiva modo avión. Al recuperar Internet la app reenvía automáticamente la operación con la misma llave y la cola debe quedar vacía. Si el dispositivo no notifica el cambio de conectividad, usa **Reenviar lo pendiente**; no pulses **Transferir** otra vez para reintentar.
+
+El proyecto permite HTTP sin cifrar **solo en Debug** para este laboratorio. Usa esta configuración únicamente en una Wi-Fi confiable, porque las credenciales y los tokens viajan sin TLS. No habilites HTTP en claro para una publicación de producción.
+
+### Confirmar el abono simulado del banco destino
+
+La app confirma la **retención**; el abono final lo confirma el servicio del banco destino. No se incluye la credencial de ese servicio en la app móvil. La saga compensa si no recibe el abono en **15 segundos**, así que prepara el token antes de enviar la transferencia:
+
+```powershell
+$api = "http://<IPv4-del-PC>:5080"
+$tokenBanco = (Invoke-RestMethod -Method Post -Uri "$api/token" `
+  -ContentType "application/json" `
+  -Body (@{ usuario = "core-bancario"; clave = "CoreBancario-2026" } | ConvertTo-Json)).token
+```
+
+Después de tocar **Transferir**, copia inmediatamente la llave mostrada en la app y confirma el abono:
+
+```powershell
+$transferenciaId = "<llave-mostrada-en-la-app>"
+Invoke-WebRequest -Method Post `
+  -Uri "$api/transferencias/$transferenciaId/confirmar-abono" `
+  -Headers @{ Authorization = "Bearer $tokenBanco" }
+```
+
+La API devuelve `202 Accepted` cuando publica la confirmación. La pestaña **Saldo** permite consultar el saldo actualizado. Para distinguir el abono completado de una compensación, verifica en PostgreSQL que la fila de esa llave tenga `Liquidada = true`; `Liberada = true` significa que la saga devolvió los fondos, no que completó el abono:
+
+```sql
+SELECT "TransferenciaId", "MontoUVB", "Liquidada", "Liberada"
+FROM "Retenciones"
+WHERE "TransferenciaId" = '<llave-mostrada-en-la-app>';
+```
+
+Esta cuenta de servicio y su contraseña son únicamente para el entorno de laboratorio.
+
+--- 
 
 ## ⚠️ Y una cuarta trampa: Android bloquea el HTTP sin cifrar
 
 **Que la URL abra en el navegador del emulador NO significa que la app pueda alcanzarla.**
 
-Desde API 28, Android rechaza el tráfico HTTP en claro para las aplicaciones. Nuestra API de laboratorio vive en `http://10.0.2.2:5080` —sin TLS—, así que el `HttpClient` de la app fallaría **aunque el permiso `INTERNET` esté concedido y aunque el navegador cargue la página sin problema**. El navegador tiene su propia política de red; la de la aplicación es independiente.
+Desde API 28, Android rechaza el tráfico HTTP en claro para las aplicaciones. Nuestra API de laboratorio usa HTTP sin TLS, así que el `HttpClient` de la app fallaría **aunque el permiso `INTERNET` esté concedido y aunque el navegador cargue la página sin problema**. El navegador tiene su propia política de red; la de la aplicación es independiente.
 
 Ya está resuelto en `Platforms/Android/MainApplication.cs`:
 

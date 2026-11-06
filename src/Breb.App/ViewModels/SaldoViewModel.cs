@@ -15,14 +15,19 @@ public partial class SaldoViewModel : ObservableObject
     private static readonly Guid CuentaDemo = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private readonly ClienteBrebApi _api;
-    private string? _token;
+    private readonly ConfiguracionApi _configuracionApi;
 
-    public SaldoViewModel(ClienteBrebApi api)
+    public SaldoViewModel(ClienteBrebApi api, ConfiguracionApi configuracionApi)
     {
         _api = api;
+        _configuracionApi = configuracionApi;
+        UrlApi = configuracionApi.UrlBase;
         Usuario = "luis.consulta";
         Clave = "Consulta-2026";
     }
+
+    [ObservableProperty]
+    private string urlApi = string.Empty;
 
     [ObservableProperty]
     private string usuario = string.Empty;
@@ -40,6 +45,15 @@ public partial class SaldoViewModel : ObservableObject
     private bool cargando;
 
     [RelayCommand]
+    private void GuardarUrlApi()
+    {
+        var esValida = _configuracionApi.IntentarGuardar(UrlApi, out var mensaje);
+        Estado = mensaje;
+        if (esValida)
+            UrlApi = _configuracionApi.UrlBase;
+    }
+
+    [RelayCommand]
     private async Task ConsultarSaldoAsync()
     {
         if (Cargando) return;
@@ -50,12 +64,10 @@ public partial class SaldoViewModel : ObservableObject
             // Paso 1: login contra /token (Semana 8). El token se guarda en
             // memoria del ViewModel, nunca en un campo de la vista.
             var tokenRespuesta = await _api.ObtenerTokenAsync(Usuario, Clave);
-            _token = tokenRespuesta.Token;
-
             Estado = "Consultando saldo…";
 
             // Paso 2: /cuentas/{id}/saldo con el Bearer recién emitido.
-            var saldo = await _api.ConsultarSaldoAsync(CuentaDemo, _token);
+            var saldo = await _api.ConsultarSaldoAsync(CuentaDemo, tokenRespuesta.Token);
 
             SaldoTexto = saldo.SaldoDisponible.ToString("N2", CultureInfo.GetCultureInfo("es-CO")) + " UVB";
             Estado = $"OK · rol {tokenRespuesta.Rol} · retenido {saldo.SaldoRetenido:N2} UVB";
