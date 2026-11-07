@@ -5,8 +5,8 @@ namespace Breb.App;
 
 // ── Tráfico HTTP en claro, solo en Debug (Semana 11) ────────────────────────
 // Android bloquea el HTTP sin cifrar desde API 28. Nuestra API de laboratorio
-// vive en HTTP local sin TLS, así que sin esto el HttpClient de la app falla
-// aunque el permiso INTERNET esté concedido. La URL se configura en la app.
+// vive en http://10.0.2.2:5080, así que sin esto el HttpClient de la app falla
+// aunque el permiso INTERNET esté concedido.
 //
 // OJO: probar la URL en el navegador del emulador NO demuestra que la app
 // pueda alcanzarla. El navegador tiene su propia política de red; la de la

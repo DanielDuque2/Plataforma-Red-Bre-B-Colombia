@@ -15,14 +15,6 @@
                 Style="{StaticResource Headline}"
                 SemanticProperties.HeadingLevel="Level1"/>
 
-            <Label Text="URL de la API (PC en la misma Wi-Fi)" FontSize="13"/>
-            <Entry Text="{Binding UrlApi}"
-                   Keyboard="Url"
-                   Placeholder="http://192.168.1.25:5080"/>
-            <Button Text="Guardar dirección de API"
-                    Command="{Binding GuardarUrlApiCommand}"
-                    HorizontalOptions="Fill"/>
-
            <!--
                 Clase 19: aquí ya no hay usuario ni clave. El token lo trajo
                 la pantalla de entrada; esta pantalla sólo muestra quién

@@ -38,7 +38,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$TransferenciaId,
 
-    [string]$Api = "http://127.0.0.1:5080",
+    [string]$Api = "http://127.0.0.1:5000",
 
     # Identidad de SERVICIO del core bancario destino. No es un usuario
     # humano: ningun operador deberia poder confirmar abonos.

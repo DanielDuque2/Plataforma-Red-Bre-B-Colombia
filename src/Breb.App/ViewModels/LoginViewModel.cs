@@ -17,14 +17,17 @@ public partial class LoginViewModel : ObservableObject
 {
     private readonly ClienteBrebApi _api;
     private readonly SesionUsuario _sesion;
+    private readonly ConfiguracionApi _configuracionApi;
 
     // Este ViewModel es transitorio, así que puede recibir el ClienteBrebApi
     // sin capturarlo. La sesión, que es singleton, no puede: ver el comentario
     // de ciclos de vida en SesionUsuario.
-    public LoginViewModel(ClienteBrebApi api, SesionUsuario sesion)
+    public LoginViewModel(
+        ClienteBrebApi api, SesionUsuario sesion, ConfiguracionApi configuracionApi)
     {
         _api = api;
         _sesion = sesion;
+        _configuracionApi = configuracionApi;
 
         // Credenciales del laboratorio precargadas. En una app de verdad
         // esto no va aquí jamás; en clase ahorra escribir en un teclado de
@@ -37,13 +40,14 @@ public partial class LoginViewModel : ObservableObject
         Usuario = "ana.operadora";
         Clave = "Operadora-2026";
 
-        DireccionApi = ConfiguracionApi.Descripcion;
+        UrlApi = _configuracionApi.UrlBase;
+        DireccionApi = _configuracionApi.Descripcion;
 
         // Si la app corre en un teléfono físico y nadie puso la IP de la
         // WiFi, decirlo AQUÍ, antes del primer intento. El alternativo es
         // un timeout de 10 s que parece lentitud del servidor.
-        if (ConfiguracionApi.FaltaConfigurar)
-            Estado = ConfiguracionApi.ComoConfigurar;
+        if (_configuracionApi.FaltaConfigurar)
+            Estado = _configuracionApi.ComoConfigurar;
     }
 
     [ObservableProperty]
@@ -59,7 +63,15 @@ public partial class LoginViewModel : ObservableObject
     private string direccionApi = string.Empty;
 
     [ObservableProperty]
+    private string urlApi = string.Empty;
+
+    [ObservableProperty]
     private bool entrando;
+
+    [ObservableProperty]
+    private bool configurandoApi;
+
+    public string? ErrorAlerta { get; private set; }
 
     /// <summary>
     /// Para deshabilitar el botón mientras se entra. El XAML no sabe negar
@@ -67,18 +79,55 @@ public partial class LoginViewModel : ObservableObject
     /// clase entera para ahorrar dos líneas. Misma técnica que
     /// <c>NoHayPendientes</c> en <see cref="TransferenciaViewModel"/>.
     /// </summary>
-    public bool NoEntrando => !Entrando;
+    public bool NoEntrando => !Entrando && !ConfigurandoApi;
+    public bool NoConfigurandoApi => !Entrando && !ConfigurandoApi;
+    public string TextoBotonEntrar => Entrando ? "Conectando…" : "Entrar";
+    public string TextoBotonApi => ConfigurandoApi ? "Configurando…" : "Configurar API";
 
-    partial void OnEntrandoChanged(bool value) => OnPropertyChanged(nameof(NoEntrando));
+    partial void OnEntrandoChanged(bool value)
+    {
+        OnPropertyChanged(nameof(NoEntrando));
+        OnPropertyChanged(nameof(NoConfigurandoApi));
+        OnPropertyChanged(nameof(TextoBotonEntrar));
+    }
+
+    partial void OnConfigurandoApiChanged(bool value)
+    {
+        OnPropertyChanged(nameof(NoEntrando));
+        OnPropertyChanged(nameof(NoConfigurandoApi));
+        OnPropertyChanged(nameof(TextoBotonApi));
+    }
+
+    public bool IntentarGuardarUrlApi(string url, out string mensaje)
+    {
+        if (!_configuracionApi.IntentarGuardar(url, out mensaje))
+        {
+            Estado = mensaje;
+            return false;
+        }
+
+        UrlApi = _configuracionApi.UrlBase;
+        DireccionApi = _configuracionApi.Descripcion;
+        Estado = mensaje;
+        return true;
+    }
 
     [RelayCommand]
     private async Task EntrarAsync()
     {
-        if (Entrando) return;
+        ErrorAlerta = null;
+
+        if (Entrando || ConfigurandoApi) return;
 
         if (string.IsNullOrWhiteSpace(Usuario) || string.IsNullOrWhiteSpace(Clave))
         {
-            Estado = "Usuario y clave son obligatorios.";
+            RegistrarError("Usuario y clave son obligatorios.");
+            return;
+        }
+
+        if (_configuracionApi.FaltaConfigurar)
+        {
+            RegistrarError(_configuracionApi.ComoConfigurar);
             return;
         }
 
@@ -108,28 +157,38 @@ public partial class LoginViewModel : ObservableObject
         }
         catch (HttpRequestException)
         {
-            Estado = ConfiguracionApi.FaltaConfigurar
-                ? ConfiguracionApi.ComoConfigurar
-                : $"Sin conexión con la API en {ConfiguracionApi.Direccion}. " +
-                  "¿Está corriendo, y el teléfono está en la misma WiFi?";
+            RegistrarError(_configuracionApi.FaltaConfigurar
+                ? _configuracionApi.ComoConfigurar
+                : $"Sin conexión con la API en {_configuracionApi.Direccion}. " +
+                  "¿Está corriendo, y el teléfono está en la misma WiFi?");
         }
         catch (TaskCanceledException)
         {
             // Un firewall no rechaza: deja esperando. Por eso el síntoma es
             // un timeout y no un "sin conexión", y por eso la prueba que
             // vale es abrir Swagger en el navegador DEL teléfono.
-            Estado = $"Se agotó el tiempo esperando a {ConfiguracionApi.Direccion}. " +
+            RegistrarError($"Se agotó el tiempo esperando a {_configuracionApi.Direccion}. " +
                      "Un firewall no rechaza: deja esperando. Abra " +
-                     $"{ConfiguracionApi.SwaggerParaProbar} en el navegador del teléfono: " +
-                     "si esa página no carga, el problema no está en la app.";
+                     $"{_configuracionApi.SwaggerParaProbar} en el navegador del teléfono: " +
+                     "si esa página no carga, el problema no está en la app.");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.StartsWith("Login rechazado: HTTP 401"))
+        {
+            RegistrarError("Usuario o clave incorrectos. Verifica tus credenciales e inténtalo de nuevo.");
         }
         catch (Exception ex)
         {
-            Estado = ex.Message;
+            RegistrarError($"No se pudo iniciar sesión: {ex.Message}");
         }
         finally
         {
             Entrando = false;
         }
+    }
+
+    private void RegistrarError(string mensaje)
+    {
+        Estado = mensaje;
+        ErrorAlerta = mensaje;
     }
 }

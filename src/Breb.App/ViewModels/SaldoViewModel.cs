@@ -25,11 +25,14 @@ public partial class SaldoViewModel : ObservableObject
 
     private readonly ClienteBrebApi _api;
     private readonly ConfiguracionApi _configuracionApi;
+    private readonly SesionUsuario _sesion;
 
-    public SaldoViewModel(ClienteBrebApi api, ConfiguracionApi configuracionApi)
+    public SaldoViewModel(
+        ClienteBrebApi api, ConfiguracionApi configuracionApi, SesionUsuario sesion)
     {
         _api = api;
         _configuracionApi = configuracionApi;
+        _sesion = sesion;
         UrlApi = configuracionApi.UrlBase;
         Usuario = "luis.consulta";
         Clave = "Consulta-2026";
@@ -67,7 +70,7 @@ public partial class SaldoViewModel : ObservableObject
     [RelayCommand]
     private void Aparecer()
     {
-        DireccionApi = ConfiguracionApi.Descripcion;
+        DireccionApi = _configuracionApi.Descripcion;
         QuienEntro = _sesion.EstaAutenticado
             ? $"{_sesion.Usuario} · rol {_sesion.Rol}"
             : "sin sesión";
@@ -105,9 +108,9 @@ public partial class SaldoViewModel : ObservableObject
             // Este es el error que aparece cuando la dirección de la API no
             // corresponde a dónde corre la app: la trampa 3 de la Clase 14
             // en el emulador, y el teléfono físico de la Clase 19.
-            Estado = ConfiguracionApi.FaltaConfigurar
-                ? ConfiguracionApi.ComoConfigurar
-                : $"Sin conexión con la API en {ConfiguracionApi.Direccion}: {ex.Message}";
+            Estado = _configuracionApi.FaltaConfigurar
+                ? _configuracionApi.ComoConfigurar
+                : $"Sin conexión con la API en {_configuracionApi.Direccion}: {ex.Message}";
             SaldoTexto = "—";
         }
         catch (Exception ex)

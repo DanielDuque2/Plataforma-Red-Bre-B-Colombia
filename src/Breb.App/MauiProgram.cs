@@ -17,9 +17,29 @@ public static class MauiProgram
 				fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
 			});
 
-		// La URL se puede cambiar desde la pestaña Saldo. El valor inicial
-		// distingue el emulador Android del escritorio; en un teléfono físico
-		// se configura la IPv4 del PC en la misma red Wi-Fi.
+		// Clase 14 (trampa 3): dentro del EMULADOR de Android, localhost es el
+		// emulador, no esta maquina. 10.0.2.2 es la direccion que el emulador
+		// reserva para hablar con el host.
+		//
+		// Clase 18: pero esa direccion SOLO existe dentro del emulador. Si la
+		// app corre en Windows, 10.0.2.2 no resuelve y ninguna llamada llega:
+		// la pantalla se queda en "Sin conexion con la API" y uno pierde media
+		// clase buscando el error en el codigo que esta bien.
+		//
+		// En el escritorio se usa 127.0.0.1 y NO "localhost", a proposito: en
+		// Windows localhost resuelve PRIMERO a ::1 por IPv6, y la API escucha
+		// en 0.0.0.0, que es solo IPv4. Nombrar la IP evita depender de ese
+		// orden de resolucion.
+		//
+		// Y una advertencia que costo media hora el 28 de octubre: si la app
+		// se lanza desde dentro de un AppContainer de Windows —por ejemplo
+		// como proceso hijo de una app empaquetada de la Store— el sistema
+		// BLOQUEA sus conexiones a loopback Y a la red privada. No las
+		// rechaza: las deja esperando, asi que el sintoma es un timeout de
+		// 10 s y no un "sin conexion". Parece lentitud del servidor y no lo
+		// es. La senal que lo delata es netstat: el socket queda en SYN_SENT.
+		// La solucion es lanzar la app desde una consola normal.
+		//
 		builder.Services.AddSingleton<ConfiguracionApi>();
 
 		builder.Services.AddHttpClient<ClienteBrebApi>(http =>

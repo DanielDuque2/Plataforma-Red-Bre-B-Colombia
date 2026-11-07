@@ -34,6 +34,14 @@
 
             <BoxView HeightRequest="1" BackgroundColor="LightGray" Margin="0,8"/>
 
+            <Button Text="{Binding TextoBotonApi}"
+                    Clicked="OnConfigurarApiClicked"
+                    IsEnabled="{Binding NoConfigurandoApi}"
+                    HorizontalOptions="Fill"/>
+
+            <ActivityIndicator IsRunning="{Binding ConfigurandoApi}"
+                               IsVisible="{Binding ConfigurandoApi}"/>
+
             <Label Text="Usuario" FontSize="13"/>
             <Entry Text="{Binding Usuario}"
                    Placeholder="usuario"
@@ -44,10 +52,10 @@
                    IsPassword="True"
                    Placeholder="clave"
                    ReturnType="Go"
-                   ReturnCommand="{Binding EntrarCommand}"/>
+                   Completed="OnEntrarCompleted"/>
 
-            <Button Text="Entrar"
-                    Command="{Binding EntrarCommand}"
+            <Button Text="{Binding TextoBotonEntrar}"
+                    Clicked="OnEntrarClicked"
                     IsEnabled="{Binding NoEntrando}"
                     HorizontalOptions="Fill"/>
 
@@ -67,7 +75,7 @@
                 10.0.2.2 y usted está en un teléfono físico, ya sabe cuál es
                 el problema sin esperar el timeout de 10 segundos.
             -->
-            <Label Text="API" FontSize="11" TextColor="Gray"/>
+            <Label Text="API configurada" FontSize="11" TextColor="Gray"/>
             <Label Text="{Binding DireccionApi}"
                    FontSize="12"
                    FontFamily="Monospace"

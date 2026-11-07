@@ -8,12 +8,24 @@ public sealed class ConfiguracionApi
 
     public ConfiguracionApi()
     {
+        var direccionInicial = DeviceInfo.Platform == DevicePlatform.Android
+            ? DeviceInfo.DeviceType == DeviceType.Virtual ? UrlEmulador : string.Empty
+            : UrlLocal;
+
         UrlBase = Preferences.Default.Get(
             ClavePreferencia,
-            DeviceInfo.Platform == DevicePlatform.Android ? UrlEmulador : UrlLocal);
+            direccionInicial);
     }
 
     public string UrlBase { get; private set; }
+    public bool FaltaConfigurar => string.IsNullOrWhiteSpace(UrlBase);
+    public string Descripcion => FaltaConfigurar ? "Sin configurar" : UrlBase;
+    public string Direccion => Descripcion;
+    public string ComoConfigurar =>
+        "Configure la URL de la API con la IPv4 del PC, por ejemplo http://192.168.1.25:5080.";
+    public string SwaggerParaProbar =>
+        FaltaConfigurar ? "http://<IPv4-del-PC>:5080/swagger/index.html"
+                        : $"{UrlBase.TrimEnd('/')}/swagger/index.html";
 
     public bool IntentarGuardar(string? url, out string mensaje)
     {
@@ -36,5 +48,7 @@ public sealed class ConfiguracionApi
     }
 
     public Uri CrearUri(string ruta) =>
-        new(new Uri(UrlBase.TrimEnd('/') + "/"), ruta.TrimStart('/'));
+        FaltaConfigurar
+            ? throw new InvalidOperationException(ComoConfigurar)
+            : new Uri(new Uri(UrlBase.TrimEnd('/') + "/"), ruta.TrimStart('/'));
 }
